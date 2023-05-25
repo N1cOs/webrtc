@@ -807,6 +807,39 @@ func (pc *PeerConnection) createICETransport() *ICETransport {
 	return t
 }
 
+func (pc *PeerConnection) AddTrackToTrancivier(track TrackLocal, transceiver *RTPTransceiver) (*RTPSender, error) {
+	if pc.isClosed.get() {
+		return nil, &rtcerr.InvalidStateError{Err: ErrConnectionClosed}
+	}
+
+	if transceiver == nil || transceiver.stopped || transceiver.kind != track.Kind() {
+		return nil, fmt.Errorf("error add track to trancivier")
+	}
+
+	if transceiver.Sender() != nil {
+		if err := transceiver.Sender().ReplaceTrack(track); err != nil {
+			return nil, err
+		}
+
+		return transceiver.Sender(), nil
+	}
+
+	sender, err := pc.api.NewRTPSender(track, pc.dtlsTransport)
+	if err != nil {
+		return nil, err
+	}
+	err = transceiver.SetSender(sender, track)
+	if err != nil {
+		_ = sender.Stop()
+		transceiver.setSender(nil)
+		return nil, err
+	}
+
+	pc.onNegotiationNeeded()
+
+	return sender, nil
+}
+
 // CreateAnswer starts the PeerConnection and generates the localDescription
 func (pc *PeerConnection) CreateAnswer(*AnswerOptions) (SessionDescription, error) {
 	useIdentity := pc.idpLoginURL != nil
